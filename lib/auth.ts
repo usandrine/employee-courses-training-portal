@@ -1,23 +1,11 @@
-// This is a simplified auth implementation for demo purposes
-// In a real application, you would use a proper authentication system
+// --- lib/auth.ts ---
+import { compare, hash } from "bcryptjs"
+import clientPromise from "./mongodb"
+import { ObjectId } from "mongodb"
 
-// Mock user database
-const users = [
-  {
-    id: "1",
-    name: "Demo User",
-    email: "demo@example.com",
-    password: "password123",
-  },
-]
-
-// Store the current user in localStorage (in a real app, use cookies or JWT)
 let currentUser: { id: string; name: string; email: string } | null = null
-
-// Check if we're in a browser environment
 const isBrowser = typeof window !== "undefined"
 
-// Initialize from localStorage if available
 if (isBrowser) {
   try {
     const storedUser = localStorage.getItem("currentUser")
@@ -30,74 +18,128 @@ if (isBrowser) {
 }
 
 export async function login(email: string, password: string): Promise<boolean> {
-  // Simulate API call delay
-  await new Promise((resolve) => setTimeout(resolve, 500))
+  try {
+    const client = await clientPromise
+    const db = client.db("emplyee_db")
+    const usersCollection = db.collection("users")
 
-  const user = users.find((u) => u.email === email && u.password === password)
+    const user = await usersCollection.findOne({ email })
+    if (!user || !user.password) return false
 
-  if (user) {
-    // Store user info (excluding password)
+    const isPasswordValid = await compare(password, user.password)
+    if (!isPasswordValid) return false
+
     const { password: _, ...userInfo } = user
-    currentUser = userInfo
+    currentUser = {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+    }
 
     if (isBrowser) {
-      localStorage.setItem("currentUser", JSON.stringify(userInfo))
+      localStorage.setItem("currentUser", JSON.stringify(currentUser))
     }
 
     return true
+  } catch (error) {
+    console.error("Login error:", error)
+    return false
   }
-
-  return false
 }
 
 export async function register(name: string, email: string, password: string): Promise<boolean> {
-  // Simulate API call delay
-  await new Promise((resolve) => setTimeout(resolve, 500))
+  try {
+    const client = await clientPromise
+    const db = client.db("emplyee_db")
+    const usersCollection = db.collection("users")
 
-  // Check if user already exists
-  if (users.some((u) => u.email === email)) {
+    const existingUser = await usersCollection.findOne({ email })
+    if (existingUser) return false
+
+    const hashedPassword = await hash(password, 10)
+    const result = await usersCollection.insertOne({
+      name,
+      email,
+      password: hashedPassword,
+      enrolledCourses: [],
+      createdAt: new Date(),
+    })
+
+    return !!result.insertedId
+  } catch (error) {
+    console.error("Registration error:", error)
     return false
   }
-
-  // Create new user
-  const newUser = {
-    id: String(users.length + 1),
-    name,
-    email,
-    password,
-  }
-
-  users.push(newUser)
-  return true
 }
 
 export async function logout(): Promise<void> {
-  // Simulate API call delay
   await new Promise((resolve) => setTimeout(resolve, 300))
-
   currentUser = null
-
-  if (isBrowser) {
-    localStorage.removeItem("currentUser")
-  }
+  if (isBrowser) localStorage.removeItem("currentUser")
 }
 
-export async function getCurrentUser(): Promise<{ name: string; email: string } | null> {
-  // In a real app, you would validate the token/session here
+export async function getCurrentUser(): Promise<{ id: string; name: string; email: string } | null> {
   if (isBrowser) {
     try {
       const storedUser = localStorage.getItem("currentUser")
-      if (storedUser) {
-        return JSON.parse(storedUser)
-      }
+      if (storedUser) return JSON.parse(storedUser)
     } catch (error) {
       console.error("Failed to parse stored user:", error)
     }
   }
-
   return currentUser
 }
 
 export async function isAuthenticated(): Promise<boolean> {
   return !!(await getCurrentUser())
+}
+
+export async function getUserEnrolledCourses(userId: string): Promise<string[]> {
+  try {
+    const client = await clientPromise
+    const db = client.db("emplyee_db")
+    const usersCollection = db.collection("users")
+
+    const user = await usersCollection.findOne({ _id: new ObjectId(userId) })
+    return user?.enrolledCourses || []
+  } catch (error) {
+    console.error("Error fetching enrolled courses:", error)
+    return []
+  }
+}
+
+export async function enrollUserInCourse(userId: string, courseId: string): Promise<boolean> {
+  try {
+    const client = await clientPromise
+    const db = client.db("emplyee_db")
+    const usersCollection = db.collection("users")
+
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(userId) },
+      { $addToSet: { enrolledCourses: courseId } },
+    )
+
+    return result.modifiedCount > 0
+  } catch (error) {
+    console.error("Error enrolling in course:", error)
+    return false
+  }
+}
+
+export async function unenrollUserFromCourse(userId: string, courseId: string): Promise<boolean> {
+  try {
+    const client = await clientPromise
+    const db = client.db("emplyee_db")
+    const usersCollection = db.collection("users")
+
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(userId) },
+      { $pull: { enrolledCourses: courseId } },
+    )
+
+    return result.modifiedCount > 0
+  } catch (error) {
+    console.error("Error unenrolling from course:", error)
+    return false
+  }
 }

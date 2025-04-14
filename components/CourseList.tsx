@@ -1,3 +1,4 @@
+// components/CourseList.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -16,17 +17,34 @@ export default function CourseList() {
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const url = searchQuery ? `/api/courses?search=${encodeURIComponent(searchQuery)}` : "/api/courses"
+        // Use the test endpoint that we know works
+        const url = searchQuery 
+          ? `/api/test-courses?search=${encodeURIComponent(searchQuery)}` 
+          : "/api/test-courses"
 
         const res = await fetch(url)
+        
         if (!res.ok) {
-          throw new Error("Failed to fetch courses")
+          throw new Error(`Failed to fetch courses: ${res.status}`)
         }
+        
         const data = await res.json()
-        setCourses(data)
+        
+        // If search query exists, filter courses client-side
+        if (searchQuery && data.length > 0) {
+          const filtered = data.filter(
+            (course: Course) =>
+              course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              course.shortDescription.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              course.description.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+          setCourses(filtered)
+        } else {
+          setCourses(data)
+        }
       } catch (err) {
-        setError("Failed to load courses. Please try again later.")
-        console.error(err)
+        console.error("Error in CourseList:", err)
+        setError(`Failed to load courses: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         setLoading(false)
       }

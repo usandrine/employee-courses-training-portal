@@ -1,15 +1,27 @@
-import { type NextRequest, NextResponse } from "next/server";
-import { courses } from "@/data/courses";
+// app/api/courses/[id]/route.ts
+import { type NextRequest, NextResponse } from "next/server"
+import { courses as sampleCourses } from "@/data/courses"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  // Await params to handle the promise
-  const { id } = await params; // Destructure and await params
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const id = params.id
 
-  const course = courses.find((c) => c.id === id);
+    if (!id) {
+      return NextResponse.json({ error: "Course ID is required" }, { status: 400 })
+    }
 
-  if (!course) {
-    return NextResponse.json({ error: "Course not found" }, { status: 404 });
+    const sampleCourse = sampleCourses.find(course => course.id === id)
+
+    if (sampleCourse) {
+      return NextResponse.json(sampleCourse)
+    }
+
+    return NextResponse.json({ error: "Course not found" }, { status: 404 })
+  } catch (error) {
+    console.error("Error fetching course:", error)
+    return NextResponse.json({ error: "Failed to fetch course" }, { status: 500 })
   }
-
-  return NextResponse.json(course);
 }

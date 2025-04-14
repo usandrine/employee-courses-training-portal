@@ -1,26 +1,48 @@
+// app/courses/[id]/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useDispatch, useSelector } from "react-redux"
-import { enrollCourse, unenrollCourse } from "@/lib/features/courses/coursesSlice"
-import type { RootState } from "@/lib/store"
+import { updateEnrollment } from "@/lib/features/courses/coursesSlice"
+import type { RootState, AppDispatch } from "@/lib/store"
 import type { Course } from "@/types/course"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Clock, User } from "lucide-react"
+import { ArrowLeft, Clock, User } from 'lucide-react'
 import Link from "next/link"
-import { getCurrentUser } from "@/lib/auth"
 import { useToast } from "@/components/ui/use-toast"
+import { useRedirectAfterLogin } from "@/hooks/useRedirectAfterLogin"
+
+// Create a client-side auth service
+const authService = {
+  async getCurrentUser() {
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        return await response.json();
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching current user:', error);
+      return null;
+    }
+  }
+};
 
 export default function CourseDetails() {
   const { id } = useParams()
   const router = useRouter()
-  const dispatch = useDispatch()
+  const searchParams = useSearchParams()
+  const dispatch = useDispatch<AppDispatch>()
   const [course, setCourse] = useState<Course | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null)
+  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null)
   const { toast } = useToast()
+  const { redirectToSavedLocation } = useRedirectAfterLogin()
+
+  // Get the redirect URL from query parameters
+  const redirectUrl = searchParams.get("redirect")
 
   const enrolledCourses = useSelector((state: RootState) => state.courses.enrolledCourses)
   const isEnrolled = enrolledCourses.includes(id as string)
@@ -28,8 +50,8 @@ export default function CourseDetails() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Check if user is authenticated
-        const currentUser = await getCurrentUser()
+        // Check if user is authenticated using the client-side service
+        const currentUser = await authService.getCurrentUser();
         setUser(currentUser)
 
         // Fetch course details
@@ -50,7 +72,7 @@ export default function CourseDetails() {
     fetchData()
   }, [id])
 
-  const handleEnrollment = () => {
+  const handleEnrollment = async () => {
     // Check if user is logged in
     if (!user) {
       toast({
@@ -58,21 +80,31 @@ export default function CourseDetails() {
         description: "Please log in to enroll in this course",
         variant: "destructive",
       })
+      
+      // The hook will automatically save the redirect URL from the query parameter
       router.push(`/login?redirect=/courses/${id}`)
       return
     }
 
-    if (isEnrolled) {
-      dispatch(unenrollCourse(id as string))
+    try {
+      if (isEnrolled) {
+        await dispatch(updateEnrollment({ courseId: id as string, action: "unenroll" })).unwrap()
+        toast({
+          title: "Unenrolled",
+          description: `You have successfully unenrolled from ${course?.title}`,
+        })
+      } else {
+        await dispatch(updateEnrollment({ courseId: id as string, action: "enroll" })).unwrap()
+        toast({
+          title: "Enrolled",
+          description: `You have successfully enrolled in ${course?.title}`,
+        })
+      }
+    } catch (error) {
       toast({
-        title: "Unenrolled",
-        description: `You have successfully unenrolled from ${course?.title}`,
-      })
-    } else {
-      dispatch(enrollCourse(id as string))
-      toast({
-        title: "Enrolled",
-        description: `You have successfully enrolled in ${course?.title}`,
+        title: "Error",
+        description: "Failed to update enrollment. Please try again.",
+        variant: "destructive",
       })
     }
   }
@@ -146,7 +178,7 @@ export default function CourseDetails() {
                 <Link href={`/login?redirect=/courses/${id}`}>Login to Enroll</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link href={`/register?redirect=/courses/${id}`}>Register</Link>
+                <Link href={`/register?redirect=${encodeURIComponent(`/courses/${id}`)}`}>Register</Link>
               </Button>
             </div>
           </div>

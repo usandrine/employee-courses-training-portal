@@ -11,26 +11,65 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { getCurrentUser, logout } from "@/lib/auth"
-import { User } from "lucide-react"
+import { User } from 'lucide-react'
+import { useDispatch } from "react-redux"
+import { fetchEnrolledCourses, setEnrolledCourses } from "@/lib/features/courses/coursesSlice"
+import type { AppDispatch } from "@/lib/store"
+
+// Create a client-side auth service that doesn't import MongoDB
+const authService = {
+  async getCurrentUser() {
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        return await response.json();
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching current user:', error);
+      return null;
+    }
+  },
+  
+  async logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      localStorage.removeItem("currentUser");
+      return true;
+    } catch (error) {
+      console.error('Error logging out:', error);
+      return false;
+    }
+  }
+};
 
 export default function Navbar() {
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null)
+  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null)
   const pathname = usePathname()
   const router = useRouter()
+  const dispatch = useDispatch<AppDispatch>()
 
   useEffect(() => {
     const checkAuth = async () => {
-      const currentUser = await getCurrentUser()
+      const currentUser = await authService.getCurrentUser();
       setUser(currentUser)
+
+      if (currentUser) {
+        // Fetch enrolled courses when user is logged in
+        dispatch(fetchEnrolledCourses())
+      } else {
+        // Clear enrolled courses when user is logged out
+        dispatch(setEnrolledCourses([]))
+      }
     }
 
     checkAuth()
-  }, [pathname])
+  }, [pathname, dispatch])
 
   const handleLogout = async () => {
-    await logout()
+    await authService.logout();
     setUser(null)
+    dispatch(setEnrolledCourses([]))
     router.push("/login")
   }
 

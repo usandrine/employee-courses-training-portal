@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
-import { register, getCurrentUser } from "@/lib/auth"
+import { useRedirectAfterLogin } from "@/hooks/useRedirectAfterLogin"
 
 export default function RegisterPage() {
   const [name, setName] = useState("")
@@ -21,6 +21,7 @@ export default function RegisterPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
+  const { redirectToSavedLocation } = useRedirectAfterLogin()
 
   // Get the redirect URL from query parameters
   const redirectUrl = searchParams.get("redirect") || "/login"
@@ -28,14 +29,23 @@ export default function RegisterPage() {
   useEffect(() => {
     // Check if user is already logged in
     const checkAuth = async () => {
-      const user = await getCurrentUser()
-      if (user) {
-        router.push("/dashboard")
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        const user = await response.json();
+        if (user) {
+          // If already logged in, try to redirect to the saved location first
+          const didRedirect = redirectToSavedLocation();
+          
+          // If no saved location, go to dashboard
+          if (!didRedirect) {
+            router.push("/dashboard");
+          }
+        }
       }
     }
 
     checkAuth()
-  }, [router])
+  }, [router, redirectToSavedLocation])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,9 +62,17 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      const success = await register(name, email, password)
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, email, password }),
+      });
 
-      if (success) {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
         toast({
           title: "Registration successful",
           description: "Your account has been created. You can now log in.",
@@ -63,7 +81,7 @@ export default function RegisterPage() {
       } else {
         toast({
           title: "Registration failed",
-          description: "This email may already be in use. Please try another.",
+          description: data.message || "This email may already be in use. Please try another.",
           variant: "destructive",
         })
       }

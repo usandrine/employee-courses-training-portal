@@ -4,48 +4,61 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSelector } from "react-redux"
 import Link from "next/link"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+
+import {
+  Card, CardContent, CardDescription, CardFooter,
+  CardHeader, CardTitle
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getCurrentUser } from "@/lib/auth"
+
 import type { RootState } from "@/lib/store"
 import type { Course } from "@/types/course"
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [user, setUser] = useState<{ name: string; email: string } | null>(null)
   const [enrolledCourseData, setEnrolledCourseData] = useState<Course[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const router = useRouter()
 
-  const enrolledCourseIds = useSelector((state: RootState) => state.courses.enrolledCourses)
+  // Delay reading Redux state until client mounts
+  const [enrolledCourseIds, setEnrolledCourseIds] = useState<string[]>([])
+  const reduxCourseIds = useSelector((state: RootState) => state.courses.enrolledCourses)
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const currentUser = await getCurrentUser()
+    setEnrolledCourseIds(reduxCourseIds)
+  }, [reduxCourseIds])
 
-      if (!currentUser) {
-        router.push("/login")
-        return
-      }
+  useEffect(() => {
+    const checkAuthAndLoadData = async () => {
+      try {
+        const res = await fetch("/api/auth/current", { credentials: "include" })
+        const currentUser = await res.json()
 
-      setUser(currentUser)
-
-      // Fetch enrolled course data
-      if (enrolledCourseIds.length > 0) {
-        try {
-          const promises = enrolledCourseIds.map((id) => fetch(`/api/courses/${id}`).then((res) => res.json()))
-          const courses = await Promise.all(promises)
-          setEnrolledCourseData(courses)
-        } catch (error) {
-          console.error("Failed to fetch enrolled courses:", error)
+        if (!currentUser) {
+          router.push("/login")
+          return
         }
-      }
 
-      setIsLoading(false)
+        setUser(currentUser)
+
+        if (reduxCourseIds.length > 0) {
+          const courses = await Promise.all(
+            reduxCourseIds.map((id) =>
+              fetch(`/api/courses/${id}`).then((res) => res.json())
+            )
+          )
+          setEnrolledCourseData(courses)
+        }
+      } catch (err) {
+        console.error("Auth or course fetch failed:", err)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    checkAuth()
-  }, [enrolledCourseIds, router])
+    checkAuthAndLoadData()
+  }, [reduxCourseIds, router])
 
   if (isLoading) {
     return <div className="container mx-auto px-4 py-8 text-center">Loading...</div>
@@ -81,7 +94,7 @@ export default function DashboardPage() {
                   <span className="text-sm font-medium">{enrolledCourseIds.length}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: "100%" }}></div>
+                  <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: "100%" }} />
                 </div>
               </div>
               <div>
@@ -90,7 +103,7 @@ export default function DashboardPage() {
                   <span className="text-sm font-medium">0/{enrolledCourseIds.length}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-green-500 h-2.5 rounded-full" style={{ width: "0%" }}></div>
+                  <div className="bg-green-500 h-2.5 rounded-full" style={{ width: "0%" }} />
                 </div>
               </div>
             </div>
@@ -104,10 +117,13 @@ export default function DashboardPage() {
             <TabsTrigger value="enrolled">Enrolled Courses</TabsTrigger>
             <TabsTrigger value="recommended">Recommended</TabsTrigger>
           </TabsList>
+
           <TabsContent value="enrolled" className="mt-6">
             {enrolledCourseData.length === 0 ? (
               <div className="text-center py-8 bg-gray-50 rounded-lg">
-                <h3 className="text-lg font-medium text-gray-600 mb-4">You haven't enrolled in any courses yet</h3>
+                <h3 className="text-lg font-medium text-gray-600 mb-4">
+                  You haven't enrolled in any courses yet
+                </h3>
                 <Button asChild>
                   <Link href="/">Browse Courses</Link>
                 </Button>
@@ -136,6 +152,7 @@ export default function DashboardPage() {
               </div>
             )}
           </TabsContent>
+
           <TabsContent value="recommended" className="mt-6">
             <div className="text-center py-8 bg-gray-50 rounded-lg">
               <h3 className="text-lg font-medium text-gray-600 mb-4">Personalized recommendations coming soon</h3>

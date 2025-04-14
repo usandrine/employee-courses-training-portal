@@ -1,16 +1,20 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle
+} from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
-import { login, getCurrentUser } from "@/lib/auth"
+import { useDispatch } from "react-redux"
+import { fetchEnrolledCourses } from "@/lib/features/courses/coursesSlice"
+import type { AppDispatch } from "@/lib/store"
+import { useRedirectAfterLogin } from "@/hooks/useRedirectAfterLogin"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -19,39 +23,64 @@ export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
+  const dispatch = useDispatch<AppDispatch>()
+  const { redirectToSavedLocation } = useRedirectAfterLogin()
 
-  // Get the redirect URL from query parameters
   const redirectUrl = searchParams.get("redirect") || "/dashboard"
 
+  // ✅ Only redirect if the user is really authenticated
   useEffect(() => {
-    // Check if user is already logged in
     const checkAuth = async () => {
-      const user = await getCurrentUser()
-      if (user) {
-        router.push(redirectUrl)
+      try {
+        const response = await fetch('/api/auth/me');
+        const user = await response.json();
+
+        if (response.ok && user?.id) {
+          const didRedirect = redirectToSavedLocation()
+          if (!didRedirect) {
+            router.replace(redirectUrl)
+          }
+        }
+      } catch (err) {
+        console.error("Auth check failed:", err)
       }
     }
 
     checkAuth()
-  }, [router, redirectUrl])
+  }, [router, redirectUrl, redirectToSavedLocation])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      const success = await login(email, password)
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-      if (success) {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        localStorage.setItem('currentUser', JSON.stringify(data.user))
+
+        await dispatch(fetchEnrolledCourses()).unwrap()
+
         toast({
           title: "Login successful",
           description: "Welcome back!",
         })
-        router.push(redirectUrl)
+
+        // ✅ Only do one redirect
+        const didRedirect = redirectToSavedLocation()
+        if (!didRedirect) {
+          router.replace(redirectUrl)
+        }
       } else {
         toast({
           title: "Login failed",
-          description: "Invalid email or password. Please try again.",
+          description: data.message || "Invalid email or password.",
           variant: "destructive",
         })
       }
@@ -72,6 +101,11 @@ export default function LoginPage() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold">Login</CardTitle>
           <CardDescription>Enter your credentials to access your account</CardDescription>
+          {redirectUrl !== "/dashboard" && (
+            <div className="text-sm text-blue-500">
+              You'll be redirected back after login
+            </div>
+          )}
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
